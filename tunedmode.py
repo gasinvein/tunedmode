@@ -85,23 +85,39 @@ class TunedMode(object):
             return 0
 
 
-def init_config(config_file):
-    config = ConfigParser()
-    config.read_dict(CONFIG_DEFAULTS)
-    config.read(config_file)
-    if not os.path.isfile(config_file):
-        with open(config_file, 'w') as cf:
-            config.write(cf)
-    return config
+class TunedModeRunner(object):
+    def __init__(self, config_file):
+        self.config = self.init_config(config_file)
+        self.session_bus = SessionBus()
+        self.system_bus = SystemBus()
+        self.loop = GLib.MainLoop()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        print('Disconnecting from D-Bus')
+        self.session_bus.__exit__(*args, **kwargs)
+        self.system_bus.__exit__(*args, **kwargs)
+
+    def init_config(self, config_file):
+        config = ConfigParser()
+        config.read_dict(CONFIG_DEFAULTS)
+        config.read(config_file)
+        if not os.path.isfile(config_file):
+            with open(config_file, 'w') as cf:
+                config.write(cf)
+        return config
+
+    def run(self):
+        with TunedMode(config=self.config, system_bus=self.system_bus, session_bus=self.session_bus) as tunedmode:
+            with self.session_bus.publish(TUNEDMODE_BUS_NAME, tunedmode):
+                signal.signal(signal.SIGTERM, lambda n, f: self.loop.quit())
+                signal.signal(signal.SIGINT, lambda n, f: self.loop.quit())
+                self.loop.run()
 
 
 if __name__ == '__main__':
-    loop = GLib.MainLoop()
-    with SessionBus() as session_bus:
-        with SystemBus() as system_bus:
-            c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
-            with TunedMode(config=c, system_bus=system_bus, session_bus=session_bus) as tuned_mode:
-                with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
-                    signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
-                    signal.signal(signal.SIGINT, lambda n, f: loop.quit())
-                    loop.run()
+    c = os.path.join(save_config_path('tunedmode'), 'tunedmode.conf')
+    with TunedModeRunner(config_file=c) as runner:
+        runner.run()
