@@ -95,13 +95,16 @@ def init_config(config_file):
     return config
 
 
-if __name__ == '__main__':
+def run_tunedmode():
+    c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
     loop = GLib.MainLoop()
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
-            c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
             with TunedMode(config=c, system_bus=system_bus, session_bus=session_bus) as tuned_mode:
                 with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
                     signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
                     signal.signal(signal.SIGINT, lambda n, f: loop.quit())
                     loop.run()
+
+if __name__ == '__main__':
+    run_tunedmode()
