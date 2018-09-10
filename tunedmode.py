@@ -2,9 +2,18 @@
 
 from pydbus import SystemBus, SessionBus
 from gi.repository import GLib
+from configparser import ConfigParser
+from xdg.BaseDirectory import save_config_path
+import os
+
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
 
+CONFIG_DEFAULTS = {
+    'tuned': {
+        'game-profile': 'latency-performance'
+    }
+}
 
 class TunedMode(object):
     dbus = f"""
@@ -26,13 +35,13 @@ class TunedMode(object):
     </node>
     """
 
-    def __init__(self, system_bus):
+    def __init__(self, config, system_bus):
         self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
         self.registred_games = set()
         self.previous_profile = self.tuned.active_profile()
         print(f'Initial profile is {self.previous_profile}')
         #TODO unhardcode performance profile name
-        self.game_profile = 'latency-performance'
+        self.game_profile = config['tuned']['game-profile']
 
     def __enter__(self):
         return self
@@ -71,10 +80,21 @@ class TunedMode(object):
             return 0
 
 
+def init_config(config_file):
+    config = ConfigParser()
+    config.read_dict(CONFIG_DEFAULTS)
+    config.read(config_file)
+    if not os.path.isfile(config_file):
+        with open(config_file, 'w') as cf:
+            config.write(cf)
+    return config
+
+
 if __name__ == '__main__':
     loop = GLib.MainLoop()
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
-            with TunedMode(system_bus=system_bus) as tuned_mode:
+            c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
+            with TunedMode(config=c, system_bus=system_bus) as tuned_mode:
                 with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
                     loop.run()
