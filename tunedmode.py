@@ -37,7 +37,8 @@ class TunedMode(object):
     </node>
     """
 
-    def __init__(self, config, system_bus):
+    def __init__(self, config, system_bus, session_bus):
+        self.dbus = session_bus.get('org.freedesktop.DBus', '/')
         self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
         self.registred_games = set()
         self.previous_profile = self.tuned.active_profile()
@@ -47,13 +48,16 @@ class TunedMode(object):
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, *args, **kwargs):
         print(f'Switching back to profile {self.previous_profile}')
         success, msg = self.tuned.switch_profile(self.previous_profile)
         if not success:
             print(f'Switching to {self.previous_profile} failed: {msg}')
 
-    def RegisterGame(self, i):
+    def get_sender_pid(self, dbus_context):
+        return self.dbus.GetConnectionUnixProcessID(dbus_context.sender)
+
+    def RegisterGame(self, i, dbus_context):
         print(f'Register game {i}')
         if i in self.registred_games:
             raise ValueError(f'Process {i} is already known')
@@ -62,7 +66,7 @@ class TunedMode(object):
             self.registred_games.add(i)
         return 0
 
-    def UnregisterGame(self, i):
+    def UnregisterGame(self, i, dbus_context):
         print(f'Unregister game {i}')
         if i in self.registred_games:
             self.registred_games.remove(i)
@@ -72,7 +76,7 @@ class TunedMode(object):
             success, msg = self.tuned.switch_profile(self.previous_profile)
         return 0
 
-    def QueryStatus(self, i):
+    def QueryStatus(self, i, dbus_context):
         print(f'Status game {i}')
         # TODO ensure that we return exactly what client expects
         if i in self.registred_games:
@@ -96,7 +100,7 @@ if __name__ == '__main__':
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
             c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
-            with TunedMode(config=c, system_bus=system_bus) as tuned_mode:
+            with TunedMode(config=c, system_bus=system_bus, session_bus=session_bus) as tuned_mode:
                 with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
                     signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
                     signal.signal(signal.SIGINT, lambda n, f: loop.quit())
