@@ -34,6 +34,16 @@ class TunedMode(object):
         #TODO unhardcode performance profile name
         self.game_profile = 'latency-performance'
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print(f'Switching back to profile {self.previous_profile}')
+        success, msg = self.tuned.switch_profile(self.previous_profile)
+        if not success:
+            print(f'Switching to {self.previous_profile} failed: {msg}')
+        return success
+
     def RegisterGame(self, i):
         print(f'Register game {i}')
         if i in self.registred_games:
@@ -65,5 +75,6 @@ if __name__ == '__main__':
     loop = GLib.MainLoop()
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
-            with session_bus.publish(TUNEDMODE_BUS_NAME, TunedMode(system_bus=system_bus)):
-                loop.run()
+            with TunedMode(system_bus=system_bus) as tuned_mode:
+                with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
+                    loop.run()
