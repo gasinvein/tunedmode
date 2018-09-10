@@ -5,6 +5,7 @@ from gi.repository import GLib
 from configparser import ConfigParser
 from xdg.BaseDirectory import save_config_path
 import os
+import signal
 
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
@@ -51,7 +52,6 @@ class TunedMode(object):
         success, msg = self.tuned.switch_profile(self.previous_profile)
         if not success:
             print(f'Switching to {self.previous_profile} failed: {msg}')
-        return success
 
     def RegisterGame(self, i):
         print(f'Register game {i}')
@@ -98,4 +98,6 @@ if __name__ == '__main__':
             c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
             with TunedMode(config=c, system_bus=system_bus) as tuned_mode:
                 with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
+                    signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
+                    signal.signal(signal.SIGINT, lambda n, f: loop.quit())
                     loop.run()
