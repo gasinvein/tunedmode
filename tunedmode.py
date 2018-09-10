@@ -15,6 +15,7 @@ CONFIG_DEFAULTS = {
     }
 }
 
+
 class TunedMode(object):
     dbus = f"""
     <node>
@@ -40,7 +41,6 @@ class TunedMode(object):
         self.registred_games = set()
         self.previous_profile = self.tuned.active_profile()
         print(f'Initial profile is {self.previous_profile}')
-        #TODO unhardcode performance profile name
         self.game_profile = config['tuned']['game-profile']
 
     def __enter__(self):
@@ -74,6 +74,7 @@ class TunedMode(object):
 
     def QueryStatus(self, i):
         print(f'Status game {i}')
+        # TODO ensure that we return exactly what client expects
         if i in self.registred_games:
             return 1
         else:
