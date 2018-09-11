@@ -12,7 +12,7 @@ TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
 
 CONFIG_DEFAULTS = {
     'tuned': {
-        'game-profile': 'latency-performance'
+        'gaming-profile': 'latency-performance'
     }
 }
 
@@ -41,18 +41,20 @@ class TunedMode(object):
         self.dbus = session_bus.get('org.freedesktop.DBus', '/')
         self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
         self.registred_games = set()
-        self.previous_profile = self.tuned.active_profile()
-        print(f'Initial profile is {self.previous_profile}')
-        self.game_profile = config['tuned']['game-profile']
+        self.initial_profile = self.tuned.active_profile()
+        self.gaming_profile = config['tuned']['gaming-profile']
+        if self.gaming_profile not in self.tuned.profiles():
+            raise ValueError(f'Gaming profile "{self.gaming_profile}" doesn\'t exist')
+        print(f'Initial profile is "{self.initial_profile}", gaming profile is "{self.gaming_profile}"')
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args, **kwargs):
-        print(f'Switching back to profile {self.previous_profile}')
-        success, msg = self.tuned.switch_profile(self.previous_profile)
+        print(f'Switching back to profile "{self.initial_profile}"')
+        success, msg = self.tuned.switch_profile(self.initial_profile)
         if not success:
-            print(f'Switching to {self.previous_profile} failed: {msg}')
+            print(f'Switching to "{self.initial_profile}" failed: {msg}')
 
     def get_sender_pid(self, dbus_context):
         return self.dbus.GetConnectionUnixProcessID(dbus_context.sender)
@@ -61,7 +63,7 @@ class TunedMode(object):
         print(f'Register game {i}')
         if i in self.registred_games:
             raise ValueError(f'Process {i} is already known')
-        success, msg = self.tuned.switch_profile(self.game_profile)
+        success, msg = self.tuned.switch_profile(self.gaming_profile)
         if success:
             self.registred_games.add(i)
         return 0
@@ -73,7 +75,7 @@ class TunedMode(object):
         else:
             raise ValueError(f'Process {i} is not known')
         if len(self.registred_games) == 0:
-            success, msg = self.tuned.switch_profile(self.previous_profile)
+            success, msg = self.tuned.switch_profile(self.initial_profile)
         return 0
 
     def QueryStatus(self, i, dbus_context):
@@ -95,8 +97,8 @@ def init_config(config_file):
     return config
 
 
-def run_tunedmode():
-    c = init_config(os.path.join(save_config_path('tunedmode'), 'tunedmode.conf'))
+def run_tunedmode(config_file):
+    c = init_config(config_file)
     loop = GLib.MainLoop()
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
@@ -106,5 +108,7 @@ def run_tunedmode():
                     signal.signal(signal.SIGINT, lambda n, f: loop.quit())
                     loop.run()
 
+
 if __name__ == '__main__':
-    run_tunedmode()
+    cf = os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
+    run_tunedmode(cf)
