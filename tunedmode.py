@@ -5,7 +5,9 @@ from gi.repository import GLib
 from configparser import ConfigParser
 from xdg.BaseDirectory import save_config_path
 import os
+import sys
 import signal
+import logging
 
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
@@ -15,6 +17,11 @@ CONFIG_DEFAULTS = {
         'gaming-profile': 'latency-performance'
     }
 }
+
+
+def log(message, level=logging.INFO):
+    # TODO make logging to stderr OR to syslog
+    print(message, file=sys.stderr)
 
 
 class TunedMode(object):
@@ -45,16 +52,16 @@ class TunedMode(object):
         self.gaming_profile = config['tuned']['gaming-profile']
         if self.gaming_profile not in self.tuned.profiles():
             raise ValueError(f'Gaming profile "{self.gaming_profile}" doesn\'t exist')
-        print(f'Initial profile is "{self.initial_profile}", gaming profile is "{self.gaming_profile}"')
+        log(f'Initial profile is "{self.initial_profile}", gaming profile is "{self.gaming_profile}"')
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args, **kwargs):
-        print(f'Switching back to profile "{self.initial_profile}"')
+        log(f'Switching back to profile "{self.initial_profile}"')
         success, msg = self.tuned.switch_profile(self.initial_profile)
         if not success:
-            print(f'Switching to "{self.initial_profile}" failed: {msg}')
+            log(f'Switching to "{self.initial_profile}" failed: {msg}')
 
     def get_sender_pid(self, dbus_context):
         return self.dbus.GetConnectionUnixProcessID(dbus_context.sender)
