@@ -20,6 +20,8 @@ CONFIG_DEFAULTS = {
     }
 }
 
+RES_SUCCESS = 0
+RES_ERROR = -1
 
 def log(message, level=logging.INFO):
     """Log provided message somewhere."""
@@ -74,7 +76,7 @@ class TunedMode:
 
     def __exit__(self, *args, **kwargs):
         """Make sure TuneD profile it set back to initial value."""
-        self._swith_profile_back()
+        self._switch_profile(self.initial_profile)
 
     def __watch_process_worker(self, pid: int):
         process = psutil.Process(pid)
@@ -90,11 +92,12 @@ class TunedMode:
         watcher_thread.start()
         return watcher_thread
 
-    def _swith_profile_back(self):
-        log(f'Switching back to profile "{self.initial_profile}"')
-        success, msg = self.tuned.switch_profile(self.initial_profile)
+    def _switch_profile(self, profile: str):
+        log(f'Switching to profile "{profile}"')
+        success, msg = self.tuned.switch_profile(profile)
         if not success:
-            log(f'Switching to "{self.initial_profile}" failed: {msg}')
+            log(f'Switching to "{profile}" failed: {msg}')
+        return (success, msg)
 
     def RegisterGame(self, i, dbus_context=None): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
@@ -103,25 +106,28 @@ class TunedMode:
             log(f'Request: register {i} ({proc_name})')
         if i in self.registred_games:
             raise ValueError(f'Process {i} is already known')
-        success, msg = self.tuned.switch_profile(self.gaming_profile)
+        success, _ = self._switch_profile(self.gaming_profile)
         if success:
             self.registred_games.add(i)
             self._watch_process(i)
-        return 0
+            return RES_SUCCESS
+        return RES_ERROR
 
     def UnregisterGame(self, i, dbus_context=None): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
         if dbus_context is not None:
             log(f'Request: unregister {i} ({proc_name})')
+        # TODO check if current pid is the last one, call _swith_profile first if so,
+        # return error if profile switching failed
         if i in self.registred_games:
             self.registred_games.remove(i)
         else:
             raise ValueError(f'Process {i} is not known')
         if not self.registred_games:
             log("No more registred PIDs left")
-            self._swith_profile_back()
-        return 0
+            self._switch_profile(self.initial_profile)
+        return RES_SUCCESS
 
     def QueryStatus(self, i, dbus_context=None): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
@@ -130,8 +136,8 @@ class TunedMode:
             log(f'Request: status {i} ({proc_name})')
         # TODO ensure that we return exactly what client expects
         if i in self.registred_games:
-            return 1
-        return 0
+            return RES_SUCCESS
+        return RES_ERROR
 
 
 def init_config(config_path):
