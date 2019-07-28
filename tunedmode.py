@@ -8,6 +8,7 @@ import os
 import sys
 import signal
 import logging
+import psutil
 
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
@@ -22,6 +23,13 @@ CONFIG_DEFAULTS = {
 def log(message, level=logging.INFO):
     # TODO make logging to stderr OR to syslog
     print(message, file=sys.stderr)
+
+
+def get_process_name(pid):
+    proc_cmd = None
+    if psutil.pid_exists(pid):
+        proc_cmd = psutil.Process(pid=pid).cmdline()[0]
+    return proc_cmd
 
 
 class TunedMode(object):
@@ -45,7 +53,6 @@ class TunedMode(object):
     """
 
     def __init__(self, config, system_bus, session_bus):
-        self.dbus = session_bus.get('org.freedesktop.DBus', '/org/freedesktop/DBus')
         self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
         self.registred_games = set()
         self.initial_profile = self.tuned.active_profile()
@@ -58,16 +65,17 @@ class TunedMode(object):
         return self
 
     def __exit__(self, *args, **kwargs):
+        self._swith_profile_back()
+
+    def _swith_profile_back(self):
         log(f'Switching back to profile "{self.initial_profile}"')
         success, msg = self.tuned.switch_profile(self.initial_profile)
         if not success:
             log(f'Switching to "{self.initial_profile}" failed: {msg}')
 
-    def get_sender_pid(self, dbus_context):
-        return self.dbus.GetConnectionUnixProcessID(dbus_context.sender)
-
     def RegisterGame(self, i, dbus_context):
-        print(f'Register game {i}')
+        proc_name = get_process_name(i) or ''
+        log(f'Request: register {i} ({proc_name})')
         if i in self.registred_games:
             raise ValueError(f'Process {i} is already known')
         success, msg = self.tuned.switch_profile(self.gaming_profile)
@@ -76,17 +84,20 @@ class TunedMode(object):
         return 0
 
     def UnregisterGame(self, i, dbus_context):
-        print(f'Unregister game {i}')
+        proc_name = get_process_name(i) or ''
+        log(f'Request: unregister {i} ({proc_name})')
         if i in self.registred_games:
             self.registred_games.remove(i)
         else:
             raise ValueError(f'Process {i} is not known')
         if len(self.registred_games) == 0:
-            success, msg = self.tuned.switch_profile(self.initial_profile)
+            log("No more registred PIDs left")
+            self._swith_profile_back()
         return 0
 
     def QueryStatus(self, i, dbus_context):
-        print(f'Status game {i}')
+        proc_name = get_process_name(i) or ''
+        log(f'Request: status {i} ({proc_name})')
         # TODO ensure that we return exactly what client expects
         if i in self.registred_games:
             return 1
