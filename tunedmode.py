@@ -73,9 +73,10 @@ class TunedMode(object):
         if not success:
             log(f'Switching to "{self.initial_profile}" failed: {msg}')
 
-    def RegisterGame(self, i, dbus_context):
+    def RegisterGame(self, i, dbus_context=None):
         proc_name = get_process_name(i) or ''
-        log(f'Request: register {i} ({proc_name})')
+        if dbus_context is not None:
+            log(f'Request: register {i} ({proc_name})')
         if i in self.registred_games:
             raise ValueError(f'Process {i} is already known')
         success, msg = self.tuned.switch_profile(self.gaming_profile)
@@ -83,9 +84,10 @@ class TunedMode(object):
             self.registred_games.add(i)
         return 0
 
-    def UnregisterGame(self, i, dbus_context):
+    def UnregisterGame(self, i, dbus_context=None):
         proc_name = get_process_name(i) or ''
-        log(f'Request: unregister {i} ({proc_name})')
+        if dbus_context is not None:
+            log(f'Request: unregister {i} ({proc_name})')
         if i in self.registred_games:
             self.registred_games.remove(i)
         else:
