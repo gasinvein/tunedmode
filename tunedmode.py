@@ -45,7 +45,7 @@ class TunedMode(object):
     """
 
     def __init__(self, config, system_bus, session_bus):
-        self.dbus = session_bus.get('org.freedesktop.DBus', '/')
+        self.dbus = session_bus.get('org.freedesktop.DBus', '/org/freedesktop/DBus')
         self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
         self.registred_games = set()
         self.initial_profile = self.tuned.active_profile()
