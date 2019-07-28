@@ -9,6 +9,7 @@ import sys
 import signal
 import logging
 import psutil
+import threading
 
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
@@ -67,6 +68,20 @@ class TunedMode(object):
     def __exit__(self, *args, **kwargs):
         self._swith_profile_back()
 
+    def __watch_process_worker(self, pid: int):
+        process = psutil.Process(pid)
+        process.wait()
+        print(f"Process: {process.pid} exited")
+        if process.pid in self.registred_games:
+            self.UnregisterGame(process.pid)
+        return process
+
+    def _watch_process(self, pid: int):
+        watcher_thread = threading.Thread(target=self.__watch_process_worker, args=(pid,))
+        watcher_thread.daemon = True
+        watcher_thread.start()
+        return watcher_thread
+
     def _swith_profile_back(self):
         log(f'Switching back to profile "{self.initial_profile}"')
         success, msg = self.tuned.switch_profile(self.initial_profile)
@@ -82,6 +97,7 @@ class TunedMode(object):
         success, msg = self.tuned.switch_profile(self.gaming_profile)
         if success:
             self.registred_games.add(i)
+            self._watch_process(i)
         return 0
 
     def UnregisterGame(self, i, dbus_context=None):
