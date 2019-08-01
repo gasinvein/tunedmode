@@ -105,7 +105,7 @@ class TunedMode:
         if dbus_context is not None:
             log(f'Request: register {i} ({proc_name})')
         if i in self.registred_games:
-            raise ValueError(f'Process {i} is already known')
+            raise ValueError(f'Process {i} is already registred')
         success, _ = self._switch_profile(self.gaming_profile)
         if success:
             self.registred_games.add(i)
@@ -119,7 +119,7 @@ class TunedMode:
         if dbus_context is not None:
             log(f'Request: unregister {i} ({proc_name})')
         if i not in self.registred_games:
-            raise ValueError(f'Process {i} is not known')
+            raise ValueError(f'Process {i} is not registred')
         if not self.registred_games - {i}:
             log("No more registred PIDs left")
             success, _ = self._switch_profile(self.initial_profile)
