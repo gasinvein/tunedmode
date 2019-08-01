@@ -118,15 +118,14 @@ class TunedMode:
         proc_name = get_process_name(i) or ''
         if dbus_context is not None:
             log(f'Request: unregister {i} ({proc_name})')
-        # TODO check if current pid is the last one, call _swith_profile first if so,
-        # return error if profile switching failed
-        if i in self.registred_games:
-            self.registred_games.remove(i)
-        else:
+        if i not in self.registred_games:
             raise ValueError(f'Process {i} is not known')
-        if not self.registred_games:
+        if not self.registred_games - {i}:
             log("No more registred PIDs left")
-            self._switch_profile(self.initial_profile)
+            success, _ = self._switch_profile(self.initial_profile)
+            if not success:
+                return RES_ERROR
+        self.registred_games.remove(i)
         return RES_SUCCESS
 
     def QueryStatus(self, i, dbus_context=None): #pylint: disable=invalid-name
