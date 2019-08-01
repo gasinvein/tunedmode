@@ -136,10 +136,12 @@ class TunedMode:
         proc_name = get_process_name(i) or ''
         if dbus_context is not None:
             log(f'Request: status {i} ({proc_name})')
-        # TODO ensure that we return exactly what client expects
-        if i in self.registred_games:
-            return RES_SUCCESS
-        return RES_ERROR
+        ret = 0
+        if self.registred_games:
+            ret += 1
+            if i in self.registred_games:
+                ret += 1
+        return ret
 
 
 def init_config(config_path):
