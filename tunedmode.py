@@ -94,6 +94,8 @@ class TunedMode:
         return watcher_thread
 
     def _switch_profile(self, profile: str):
+        if profile == self.tuned.active_profile():
+            return (True, "Requested profile is already active")
         log(f'Switching to profile "{profile}"')
         success, msg = self.tuned.switch_profile(profile)
         if not success:
