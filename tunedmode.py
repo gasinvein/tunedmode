@@ -79,12 +79,13 @@ class TunedMode:
         self._switch_profile(self.initial_profile)
 
     def __watch_process_worker(self, pid: int):
-        process = psutil.Process(pid)
-        process.wait()
-        print(f"Process: {process.pid} exited")
-        if process.pid in self.registred_games:
-            self.UnregisterGame(process.pid)
-        return process
+        if psutil.pid_exists(pid):
+            psutil.Process(pid).wait()
+            log(f"Process: {pid} exited")
+        else:
+            log(f"Process: {pid} does not exist (already exited?)")
+        if pid in self.registred_games:
+            self.UnregisterGame(pid)
 
     def _watch_process(self, pid: int):
         watcher_thread = threading.Thread(target=self.__watch_process_worker, args=(pid,))
