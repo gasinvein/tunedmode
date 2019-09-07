@@ -174,6 +174,3 @@ def main():
     """Start TunedMode from command line."""
     config_path = os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
     run_tunedmode(init_config(config_path))
-
-if __name__ == '__main__':
-    main()

@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+
+import tunedmode
+
+if __name__ == "__main__":
+    tunedmode.main()
