@@ -2,10 +2,10 @@ project('tunedmode')
 
 pymod = import('python')
 python = pymod.find_installation('python3', modules: [
-          'PyGObject',
+          'gi',
           'pydbus',
           'psutil',
-          'pyxdg'
+          'xdg'
         ])
 
 bindir = join_paths(get_option('prefix'), get_option('bindir'))
