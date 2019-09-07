@@ -157,9 +157,8 @@ def init_config(config_path):
     return config
 
 
-def run_tunedmode(config_path):
+def run_tunedmode(config):
     """Run the daemon with provided config."""
-    config = init_config(config_path)
     loop = GLib.MainLoop()
     with SessionBus() as session_bus:
         with SystemBus() as system_bus:
@@ -171,8 +170,10 @@ def run_tunedmode(config_path):
                     signal.signal(signal.SIGINT, lambda n, f: loop.quit())
                     loop.run()
 
+def main():
+    """Start TunedMode from command line."""
+    config_path = os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
+    run_tunedmode(init_config(config_path))
 
 if __name__ == '__main__':
-    run_tunedmode(
-        config_path=os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
-    )
+    main()
