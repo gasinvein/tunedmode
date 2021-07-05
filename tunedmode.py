@@ -249,6 +249,20 @@ class TunedMode(dbus.service.Object):
         """D-Bus method implementing corresponding gamemoded method."""
         return self._query_status(i, i)
 
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
+    @dbus_handle_exceptions
+    def QueryStatusByPID(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        return self._query_status(caller_pid, game_pid)
+
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
+    @dbus_handle_exceptions
+    def QueryStatusByPIDFd(self, caller_pidfd: dbus.types.UnixFd, game_pidfd: dbus.types.UnixFd): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        caller_pid = pidfd_to_pid(caller_pidfd.take())
+        game_pid = pidfd_to_pid(game_pidfd.take())
+        return self._query_status(caller_pid, game_pid)
+
 
 def run_tunedmode():
     """Run the daemon with provided config."""
