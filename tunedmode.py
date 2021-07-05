@@ -29,6 +29,8 @@ CONFIG_DEFAULTS = {
 
 RES_SUCCESS = 0
 RES_ERROR = -1
+RES_REJECTED = -2
+
 
 def log(message, level=logging.INFO):
     """Log provided message somewhere."""
@@ -160,7 +162,7 @@ class TunedMode(dbus.service.Object):
         caller_cmd = get_process_name(caller_pid) or ''
         log(f'Request: register {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
         if not self._register_allowed(caller_pid, game_pid):
-            return RES_ERROR
+            return RES_REJECTED
         if game_pid in self.registred_games:
             log(f'Process: {game_pid} is already registred', logging.ERROR)
             return RES_ERROR
@@ -176,7 +178,7 @@ class TunedMode(dbus.service.Object):
         caller_cmd = get_process_name(caller_pid) or ''
         log(f'Request: unregister {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
         if not self._unregister_allowed(caller_pid, game_pid):
-            return RES_ERROR
+            return RES_REJECTED
         if game_pid not in self.registred_games:
             log(f'Process: {game_pid} is not registred', logging.ERROR)
             return RES_ERROR
@@ -193,7 +195,7 @@ class TunedMode(dbus.service.Object):
         caller_cmd = get_process_name(caller_pid) or ''
         log(f'Request: status {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
         if not self._query_allowed(caller_pid, game_pid):
-            return RES_ERROR
+            return RES_REJECTED
         ret = 0
         if self.registred_games:
             ret += 1
