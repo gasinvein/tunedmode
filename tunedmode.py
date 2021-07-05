@@ -159,6 +159,14 @@ class TunedMode(dbus.service.Object):
             return RES_SUCCESS
         return RES_ERROR
 
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
+    @dbus_handle_exceptions
+    def RegisterGameByPID(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        if not self._register_allowed(caller_pid, game_pid):
+            return RES_ERROR
+        return self.RegisterGame(game_pid)
+
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def UnregisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
@@ -177,6 +185,14 @@ class TunedMode(dbus.service.Object):
                 return RES_ERROR
         self.registred_games.remove(i)
         return RES_SUCCESS
+
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
+    @dbus_handle_exceptions
+    def UnregisterGameByPID(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        if not self._unregister_allowed(caller_pid, game_pid):
+            return RES_ERROR
+        return self.UnregisterGame(game_pid)
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
