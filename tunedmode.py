@@ -6,13 +6,16 @@ import signal
 import logging
 import threading
 from configparser import ConfigParser
-from pydbus import SystemBus, SessionBus
+import dbus
+import dbus.service
+import dbus.mainloop.glib
 from xdg.BaseDirectory import save_config_path
 import psutil
 from gi.repository import GLib
 
 
 TUNEDMODE_BUS_NAME = 'com.feralinteractive.GameMode'
+TUNEDMODE_BUS_PATH = '/com/feralinteractive/GameMode'
 
 CONFIG_DEFAULTS = {
     'tuned': {
@@ -37,34 +40,20 @@ def get_process_name(pid):
     return proc_cmd
 
 
-class TunedMode:
+class TunedMode(dbus.service.Object):
     """DBus daemon implementing GameMode-compatible interface."""
 
-    dbus = f"""
-    <node>
-        <interface name='{TUNEDMODE_BUS_NAME}'>
-            <method name='RegisterGame'>
-                <arg type='i' name='i' direction='in'/>
-                <arg type='i' name='i' direction='out'/>
-            </method>
-            <method name='UnregisterGame'>
-                <arg type='i' name='i' direction='in'/>
-                <arg type='i' name='i' direction='out'/>
-            </method>
-            <method name='QueryStatus'>
-                <arg type='i' name='i' direction='in'/>
-                <arg type='i' name='i' direction='out'/>
-            </method>
-        </interface>
-    </node>
-    """
-
-    def __init__(self, config, system_bus, session_bus):
+    def __init__(self, dbus_name, dbus_path):
         """Gather initial settings and config options."""
-        self.tuned = system_bus.get('com.redhat.tuned', '/Tuned')
+        super().__init__(dbus_name, dbus_path)
+        self.system_bus = dbus.SystemBus()
+        self.tuned_obj = self.system_bus.get_object('com.redhat.tuned', '/Tuned')
+        self.tuned = dbus.Interface(self.tuned_obj, 'com.redhat.tuned.control')
         self.registred_games = set()
         self.initial_profile = self.tuned.active_profile()
-        self.gaming_profile = config['tuned']['gaming-profile']
+        self.config = ConfigParser()
+        self._read_config()
+        self.gaming_profile = self.config['tuned']['gaming-profile']
         if self.gaming_profile not in self.tuned.profiles():
             raise ValueError(f'Gaming profile "{self.gaming_profile}" doesn\'t exist')
         log(f'Initial profile is "{self.initial_profile}", '
@@ -74,9 +63,21 @@ class TunedMode:
         """Set thing up."""
         return self
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self, exc_type, exc_value, traceback):
         """Make sure TuneD profile it set back to initial value."""
+        log("Stopping tunedmode...")
         self._switch_profile(self.initial_profile)
+        self.system_bus.close()
+        if exc_value:
+            raise
+
+    def _read_config(self):
+        config_path = os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
+        self.config.read_dict(CONFIG_DEFAULTS)
+        self.config.read(config_path)
+        if not os.path.isfile(config_path):
+            with open(config_path, 'w') as config_file:
+                self.config.write(config_file)
 
     def __watch_process_worker(self, pid: int):
         if psutil.pid_exists(pid):
@@ -102,11 +103,11 @@ class TunedMode:
             log(f'Switching to "{profile}" failed: {msg}')
         return (success, msg)
 
-    def RegisterGame(self, i, dbus_context=None): #pylint: disable=invalid-name
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    def RegisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
-        if dbus_context is not None:
-            log(f'Request: register {i} ({proc_name})')
+        log(f'Request: register {i} ({proc_name})')
         if i in self.registred_games:
             log(f'Process: {i} is already registred', logging.ERROR)
             return RES_ERROR
@@ -117,11 +118,11 @@ class TunedMode:
             return RES_SUCCESS
         return RES_ERROR
 
-    def UnregisterGame(self, i, dbus_context=None): #pylint: disable=invalid-name
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    def UnregisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
-        if dbus_context is not None:
-            log(f'Request: unregister {i} ({proc_name})')
+        log(f'Request: unregister {i} ({proc_name})')
         if i not in self.registred_games:
             log(f'Process: {i} is not registred', logging.ERROR)
             return RES_ERROR
@@ -133,11 +134,11 @@ class TunedMode:
         self.registred_games.remove(i)
         return RES_SUCCESS
 
-    def QueryStatus(self, i, dbus_context=None): #pylint: disable=invalid-name
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    def QueryStatus(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
-        if dbus_context is not None:
-            log(f'Request: status {i} ({proc_name})')
+        log(f'Request: status {i} ({proc_name})')
         ret = 0
         if self.registred_games:
             ret += 1
@@ -146,31 +147,21 @@ class TunedMode:
         return ret
 
 
-def init_config(config_path):
-    """Load config file and populate it if empty."""
-    config = ConfigParser()
-    config.read_dict(CONFIG_DEFAULTS)
-    config.read(config_path)
-    if not os.path.isfile(config_path):
-        with open(config_path, 'w') as config_file:
-            config.write(config_file)
-    return config
-
-
-def run_tunedmode(config):
+def run_tunedmode():
     """Run the daemon with provided config."""
-    loop = GLib.MainLoop()
-    with SessionBus() as session_bus:
-        with SystemBus() as system_bus:
-            with TunedMode(config=config,
-                           system_bus=system_bus,
-                           session_bus=session_bus) as tuned_mode:
-                with session_bus.publish(TUNEDMODE_BUS_NAME, tuned_mode):
-                    signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
-                    signal.signal(signal.SIGINT, lambda n, f: loop.quit())
-                    loop.run()
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    session_bus = dbus.SessionBus()
+    bus_name = dbus.service.BusName(TUNEDMODE_BUS_NAME, bus=session_bus)
+    with TunedMode(bus_name, TUNEDMODE_BUS_PATH):
+        loop = GLib.MainLoop()
+        signal.signal(signal.SIGTERM, lambda n, f: loop.quit())
+        signal.signal(signal.SIGINT, lambda n, f: loop.quit())
+        loop.run()
+
 
 def main():
     """Start TunedMode from command line."""
-    config_path = os.path.join(save_config_path('tunedmode'), 'tunedmode.ini')
-    run_tunedmode(init_config(config_path))
+    run_tunedmode()
+
+if __name__ == '__main__':
+    main()
