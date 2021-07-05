@@ -151,6 +151,10 @@ class TunedMode(dbus.service.Object):
         #TODO: Actually do some check if caller is permitted to unregister game
         return True
 
+    def _query_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32):
+        #TODO: Actually do some check if caller is permitted to query status of game
+        return True
+
     def _register_game(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32):
         game_cmd = get_process_name(game_pid) or ''
         caller_cmd = get_process_name(caller_pid) or ''
@@ -183,6 +187,19 @@ class TunedMode(dbus.service.Object):
                 return RES_ERROR
         self.registred_games.remove(game_pid)
         return RES_SUCCESS
+
+    def _query_status(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32):
+        game_cmd = get_process_name(game_pid) or ''
+        caller_cmd = get_process_name(caller_pid) or ''
+        log(f'Request: status {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
+        if not self._query_allowed(caller_pid, game_pid):
+            return RES_ERROR
+        ret = 0
+        if self.registred_games:
+            ret += 1
+            if game_pid in self.registred_games:
+                ret += 1
+        return ret
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
@@ -228,14 +245,7 @@ class TunedMode(dbus.service.Object):
     @dbus_handle_exceptions
     def QueryStatus(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
-        proc_name = get_process_name(i) or ''
-        log(f'Request: status {i} ({proc_name})')
-        ret = 0
-        if self.registred_games:
-            ret += 1
-            if i in self.registred_games:
-                ret += 1
-        return ret
+        return self._query_status(i, i)
 
 
 def run_tunedmode():
