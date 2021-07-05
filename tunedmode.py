@@ -133,12 +133,22 @@ class TunedMode(dbus.service.Object):
             log(f'Switching to "{profile}" failed: {msg}')
         return (success, msg)
 
+    def _register_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32):
+        #TODO: Actually do some check if caller is permitted to register game
+        return True
+
+    def _unregister_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32):
+        #TODO: Actually do some check if caller is permitted to unregister game
+        return True
+
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def RegisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
         log(f'Request: register {i} ({proc_name})')
+        if not self._register_allowed(i, i):
+            return RES_ERROR
         if i in self.registred_games:
             log(f'Process: {i} is already registred', logging.ERROR)
             return RES_ERROR
@@ -155,6 +165,8 @@ class TunedMode(dbus.service.Object):
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
         log(f'Request: unregister {i} ({proc_name})')
+        if not self._unregister_allowed(i, i):
+            return RES_ERROR
         if i not in self.registred_games:
             log(f'Process: {i} is not registred', logging.ERROR)
             return RES_ERROR
