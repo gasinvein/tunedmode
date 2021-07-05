@@ -70,6 +70,16 @@ def get_process_name(pid):
     return proc_cmd
 
 
+def pidfd_to_pid(pid_fd: int) -> int:
+    with open(f'/proc/self/fdinfo/{pid_fd}', 'r') as f:
+        fdinfo_text = f.read()
+    for line in fdinfo_text.splitlines():
+        field, value = line.split(maxsplit=1)
+        if field == 'Pid:':
+            return int(value)
+    raise ValueError(fdinfo_text)
+
+
 class TunedMode(dbus.service.Object):
     """DBus daemon implementing GameMode-compatible interface."""
 
@@ -167,6 +177,14 @@ class TunedMode(dbus.service.Object):
             return RES_ERROR
         return self.RegisterGame(game_pid)
 
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
+    @dbus_handle_exceptions
+    def RegisterGameByPIDFd(self, caller_pidfd: dbus.types.UnixFd, game_pidfd: dbus.types.UnixFd): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        caller_pid = pidfd_to_pid(caller_pidfd.take())
+        game_pid = pidfd_to_pid(game_pidfd.take())
+        return self.RegisterGameByPID(caller_pid, game_pid)
+
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def UnregisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
@@ -193,6 +211,14 @@ class TunedMode(dbus.service.Object):
         if not self._unregister_allowed(caller_pid, game_pid):
             return RES_ERROR
         return self.UnregisterGame(game_pid)
+
+    @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
+    @dbus_handle_exceptions
+    def UnregisterGameByPIDFd(self, caller_pidfd: dbus.types.UnixFd, game_pidfd: dbus.types.UnixFd): #pylint: disable=invalid-name
+        """D-Bus method implementing corresponding gamemoded method."""
+        caller_pid = pidfd_to_pid(caller_pidfd.take())
+        game_pid = pidfd_to_pid(game_pidfd.take())
+        return self.UnregisterGameByPID(caller_pid, game_pid)
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
