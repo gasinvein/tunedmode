@@ -6,9 +6,13 @@ import signal
 import logging
 import threading
 from configparser import ConfigParser
+import functools
+import inspect
+import traceback
 import dbus
 import dbus.service
 import dbus.mainloop.glib
+import dbus.exceptions
 from xdg.BaseDirectory import save_config_path
 import psutil
 from gi.repository import GLib
@@ -30,6 +34,32 @@ def log(message, level=logging.INFO):
     """Log provided message somewhere."""
     # TODO make logging to stderr OR to syslog
     print(message, file=sys.stderr)
+
+
+def dbus_handle_exceptions(func):
+    @functools.wraps(func)
+    def _impl(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except dbus.exceptions.DBusException as ex:
+            # only log DBusExceptions once
+            raise ex
+        except Exception as ex:
+            log(f"Exception {ex} occured in {func}", logging.ERROR)
+            log(traceback.format_exc(), logging.DEBUG)
+            raise ex
+    # HACK: functools.wraps() does not copy the function signature and
+    # dbus-python doesn't support varargs. As such we need to copy the
+    # signature from the function to the newly decorated function otherwise the
+    # decorators in dbus-python will manipulate the arg stack and fail
+    # miserably.
+    #
+    # Note: This can be removed if we ever stop using dbus-python.
+    #
+    # Ref: https://gitlab.freedesktop.org/dbus/dbus-python/-/issues/12
+    #
+    _impl.__signature__ = inspect.signature(func)
+    return _impl
 
 
 def get_process_name(pid):
@@ -104,6 +134,7 @@ class TunedMode(dbus.service.Object):
         return (success, msg)
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    @dbus_handle_exceptions
     def RegisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
@@ -119,6 +150,7 @@ class TunedMode(dbus.service.Object):
         return RES_ERROR
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    @dbus_handle_exceptions
     def UnregisterGame(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
@@ -135,6 +167,7 @@ class TunedMode(dbus.service.Object):
         return RES_SUCCESS
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
+    @dbus_handle_exceptions
     def QueryStatus(self, i: dbus.types.Int32): #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
         proc_name = get_process_name(i) or ''
