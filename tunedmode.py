@@ -172,12 +172,12 @@ class TunedMode(dbus.service.Object):
         if game not in self.registred_games:
             log(f'Process: {game.pid} is not registred', logging.ERROR)
             return RES_ERROR
-        if not self.registred_games - {game}:
+        self.registred_games.remove(game)
+        if not self.registred_games:
             log("No more registred PIDs left")
             success, _ = self._switch_profile(self.initial_profile)
             if not success:
                 return RES_ERROR
-        self.registred_games.remove(game)
         return RES_SUCCESS
 
     def _query_status(self, caller: Process, game: Process) -> int:
