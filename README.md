@@ -8,7 +8,7 @@ E.g. when a RegisterGame() call is received from a GameMode client, it switches 
 * [Tuned](https://github.com/redhat-performance/tuned), obviously
 * Python 3, with modules
   * PyGObject
-  * pydbus
+  * dbus
   * psutil
   * pyxdg
 

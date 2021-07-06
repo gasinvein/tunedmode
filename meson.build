@@ -3,7 +3,7 @@ project('tunedmode')
 pymod = import('python')
 python = pymod.find_installation('python3', modules: [
           'gi',
-          'pydbus',
+          'dbus',
           'psutil',
           'xdg'
         ])
