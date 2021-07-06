@@ -1,0 +1,12 @@
+[Unit]
+Description=GameMode to Tuned wrapper service
+Requires=dbus.service
+Conflicts=gamemoded.service
+
+[Service]
+Type=dbus
+BusName=com.feralinteractive.GameMode
+ExecStart=@bindir@/tunedmode
+
+[Install]
+WantedBy=default.target
