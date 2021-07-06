@@ -9,12 +9,13 @@ from configparser import ConfigParser
 import functools
 import inspect
 import traceback
+import typing as t
 import dbus
 import dbus.service
 import dbus.mainloop.glib
 import dbus.exceptions
 from xdg.BaseDirectory import save_config_path
-import psutil
+from psutil import Process
 from gi.repository import GLib
 
 
@@ -64,14 +65,6 @@ def dbus_handle_exceptions(func):
     return _impl
 
 
-def get_process_name(pid):
-    """Get cmdline of a process by it's PID."""
-    proc_cmd = None
-    if psutil.pid_exists(pid):
-        proc_cmd = psutil.Process(pid=pid).cmdline()[0]
-    return proc_cmd
-
-
 def pidfd_to_pid(pid_fd: int) -> int:
     with open(f'/proc/self/fdinfo/{pid_fd}', 'r') as f:
         fdinfo_text = f.read()
@@ -91,7 +84,8 @@ class TunedMode(dbus.service.Object):
         self.system_bus = dbus.SystemBus()
         self.tuned_obj = self.system_bus.get_object('com.redhat.tuned', '/Tuned')
         self.tuned = dbus.Interface(self.tuned_obj, 'com.redhat.tuned.control')
-        self.registred_games = set()
+        self.registred_games: t.Set[Process] = set()
+        self.process = Process()
         self.initial_profile = self.tuned.active_profile()
         self.config = ConfigParser()
         self._read_config()
@@ -121,17 +115,17 @@ class TunedMode(dbus.service.Object):
             with open(config_path, 'w') as config_file:
                 self.config.write(config_file)
 
-    def __watch_process_worker(self, pid: int):
-        if psutil.pid_exists(pid):
-            psutil.Process(pid).wait()
-            log(f"Process: {pid} exited")
+    def __watch_process_worker(self, proc: Process):
+        if proc.is_running():
+            proc.wait()
+            log(f"Process: {proc.pid} exited")
         else:
-            log(f"Process: {pid} does not exist (already exited?)")
-        if pid in self.registred_games:
-            self._unregister_game(pid, pid)
+            log(f"Process: {proc.pid} does not exist (already exited?)")
+        if proc in self.registred_games:
+            self._unregister_game(self.process, proc)
 
-    def _watch_process(self, pid: int):
-        watcher_thread = threading.Thread(target=self.__watch_process_worker, args=(pid,))
+    def _watch_process(self, proc: Process):
+        watcher_thread = threading.Thread(target=self.__watch_process_worker, args=(proc,))
         watcher_thread.daemon = True
         watcher_thread.start()
         return watcher_thread
@@ -145,76 +139,78 @@ class TunedMode(dbus.service.Object):
             log(f'Switching to "{profile}" failed: {msg}')
         return (success, msg)
 
-    def _register_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> bool:
+    def _register_allowed(self, caller: Process, game: Process) -> bool:
         #TODO: Actually do some check if caller is permitted to register game
         return True
 
-    def _unregister_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> bool:
+    def _unregister_allowed(self, caller: Process, game: Process) -> bool:
         #TODO: Actually do some check if caller is permitted to unregister game
         return True
 
-    def _query_allowed(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> bool:
+    def _query_allowed(self, caller: Process, game: Process) -> bool:
         #TODO: Actually do some check if caller is permitted to query status of game
         return True
 
-    def _register_game(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> int:
-        game_cmd = get_process_name(game_pid) or ''
-        caller_cmd = get_process_name(caller_pid) or ''
-        log(f'Request: register {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
-        if not self._register_allowed(caller_pid, game_pid):
+    def _register_game(self, caller: Process, game: Process) -> int:
+        log(f'Request: register {game.pid} ({game.exe()}) by {caller.pid} ({caller.exe()})')
+        if not self._register_allowed(caller, game):
             return RES_REJECTED
-        if game_pid in self.registred_games:
-            log(f'Process: {game_pid} is already registred', logging.ERROR)
+        if game in self.registred_games:
+            log(f'Process: {game} is already registred', logging.ERROR)
             return RES_ERROR
         success, _ = self._switch_profile(self.gaming_profile)
         if success:
-            self.registred_games.add(game_pid)
-            self._watch_process(game_pid)
+            self.registred_games.add(game)
+            self._watch_process(game)
             return RES_SUCCESS
         return RES_ERROR
 
-    def _unregister_game(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> int:
-        game_cmd = get_process_name(game_pid) or ''
-        caller_cmd = get_process_name(caller_pid) or ''
-        log(f'Request: unregister {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
-        if not self._unregister_allowed(caller_pid, game_pid):
+    def _unregister_game(self, caller: Process, game: Process) -> int:
+        log(f'Request: unregister {game.pid} ({game.exe()}) by {caller.pid} ({caller.exe()})')
+        if not self._unregister_allowed(caller, game):
             return RES_REJECTED
-        if game_pid not in self.registred_games:
-            log(f'Process: {game_pid} is not registred', logging.ERROR)
+        if game not in self.registred_games:
+            log(f'Process: {game.pid} is not registred', logging.ERROR)
             return RES_ERROR
-        if not self.registred_games - {game_pid}:
+        if not self.registred_games - {game}:
             log("No more registred PIDs left")
             success, _ = self._switch_profile(self.initial_profile)
             if not success:
                 return RES_ERROR
-        self.registred_games.remove(game_pid)
+        self.registred_games.remove(game)
         return RES_SUCCESS
 
-    def _query_status(self, caller_pid: dbus.types.Int32, game_pid: dbus.types.Int32) -> int:
-        game_cmd = get_process_name(game_pid) or ''
-        caller_cmd = get_process_name(caller_pid) or ''
-        log(f'Request: status {game_pid} ({game_cmd}) by {caller_pid} ({caller_cmd})')
-        if not self._query_allowed(caller_pid, game_pid):
+    def _query_status(self, caller: Process, game: Process) -> int:
+        log(f'Request: status {game.pid} ({game.exe()}) by {caller.pid} ({caller.exe()})')
+        if not self._query_allowed(caller, game):
             return RES_REJECTED
         ret = 0
         if self.registred_games:
             ret += 1
-            if game_pid in self.registred_games:
+            if game in self.registred_games:
                 ret += 1
         return ret
+
+    @staticmethod
+    def _get_processes(caller_pid: int, game_pid: int) -> t.Tuple[Process, Process]:
+        if caller_pid == game_pid:
+            caller = game = Process(game_pid)
+        else:
+            caller, game = Process(caller_pid), Process(game_pid)
+        return caller, game
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def RegisterGame(self, i: dbus.types.Int32) -> int: #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._register_game(i, i)
+        return self._register_game(*self._get_processes(i, i))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
     @dbus_handle_exceptions
     def RegisterGameByPID(self, caller_pid: dbus.types.Int32, #pylint: disable=invalid-name
                                 game_pid: dbus.types.Int32) -> int:
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._register_game(caller_pid, game_pid)
+        return self._register_game(*self._get_processes(caller_pid, game_pid))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
     @dbus_handle_exceptions
@@ -223,20 +219,20 @@ class TunedMode(dbus.service.Object):
         """D-Bus method implementing corresponding gamemoded method."""
         caller_pid = pidfd_to_pid(caller_pidfd.take())
         game_pid = pidfd_to_pid(game_pidfd.take())
-        return self._register_game(caller_pid, game_pid)
+        return self._register_game(*self._get_processes(caller_pid, game_pid))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def UnregisterGame(self, i: dbus.types.Int32) -> int: #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._unregister_game(i, i)
+        return self._unregister_game(*self._get_processes(i, i))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
     @dbus_handle_exceptions
     def UnregisterGameByPID(self, caller_pid: dbus.types.Int32, #pylint: disable=invalid-name
                                   game_pid: dbus.types.Int32) -> int:
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._unregister_game(caller_pid, game_pid)
+        return self._unregister_game(*self._get_processes(caller_pid, game_pid))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
     @dbus_handle_exceptions
@@ -245,20 +241,20 @@ class TunedMode(dbus.service.Object):
         """D-Bus method implementing corresponding gamemoded method."""
         caller_pid = pidfd_to_pid(caller_pidfd.take())
         game_pid = pidfd_to_pid(game_pidfd.take())
-        return self._unregister_game(caller_pid, game_pid)
+        return self._unregister_game(*self._get_processes(caller_pid, game_pid))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='i', out_signature='i')
     @dbus_handle_exceptions
     def QueryStatus(self, i: dbus.types.Int32) -> int: #pylint: disable=invalid-name
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._query_status(i, i)
+        return self._query_status(*self._get_processes(i, i))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='ii', out_signature='i')
     @dbus_handle_exceptions
     def QueryStatusByPID(self, caller_pid: dbus.types.Int32, #pylint: disable=invalid-name
                                game_pid: dbus.types.Int32) -> int:
         """D-Bus method implementing corresponding gamemoded method."""
-        return self._query_status(caller_pid, game_pid)
+        return self._query_status(*self._get_processes(caller_pid, game_pid))
 
     @dbus.service.method(TUNEDMODE_BUS_NAME, in_signature='hh', out_signature='i')
     @dbus_handle_exceptions
@@ -267,7 +263,7 @@ class TunedMode(dbus.service.Object):
         """D-Bus method implementing corresponding gamemoded method."""
         caller_pid = pidfd_to_pid(caller_pidfd.take())
         game_pid = pidfd_to_pid(game_pidfd.take())
-        return self._query_status(caller_pid, game_pid)
+        return self._query_status(*self._get_processes(caller_pid, game_pid))
 
 
 def run_tunedmode():
