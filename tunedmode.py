@@ -80,7 +80,7 @@ class TunedMode(dbus.service.Object):
 
     def __init__(self, dbus_name, dbus_path):
         """Gather initial settings and config options."""
-        super().__init__(dbus_name, dbus_path)
+        super().__init__(bus_name=dbus_name, object_path=dbus_path)
         self.system_bus = dbus.SystemBus()
         self.tuned_obj = self.system_bus.get_object('com.redhat.tuned', '/Tuned')
         self.tuned = dbus.Interface(self.tuned_obj, 'com.redhat.tuned.control')
